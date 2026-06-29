@@ -1,0 +1,203 @@
+/*
+*   Autor: Adrian Redondo Garcia
+*
+*   En esta practica mediante JavaCC realizamos un compilador que traduzca un
+*   lenguaje de alto nivel a código de máquina de pila abstracta.
+*
+*   Este lenguaje incluye comentarios tanto de una linea como multilinea.
+*   Solamente tiene variables de numeros enteros representadas como NUM.
+*   Los nombres de las variables se representan con ID.
+*   Soporta bucles (mientras y si - mientras), condicionales (si y si - sino)
+*   impresion (print) y asignacion (var = 3).
+*/
+
+options {
+DEBUG_TOKEN_MANAGER = false;
+DEBUG_PARSER = false;
+}
+
+PARSER_BEGIN(Practica)
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+
+public class Practica {
+
+    private static int etiqueta = -1;
+
+    /**
+    * Metodo el cual devuelve la siguiente etiqueta disponible
+    * */
+    private static int sigEtiqueta() {
+        return ++etiqueta;
+    }
+
+    public static void main(String[] args) throws Exception {
+    Practica parser;
+    if ( args.length < 1 ) {
+        parser = new Practica(System.in);
+    } else {
+        parser = new Practica(new BufferedReader(new FileReader(args[0])));
+    }
+
+    if (args.length == 0) {
+      System.out.println("Introduce una expresión (Ctrl+D para terminar):");
+    }
+
+    try {
+        parser.list_sntncs();
+        System.out.println("\nFin del programa");
+    } catch (ParseException e) {
+        System.err.println("\nError de sintaxis: " + e.getMessage());
+    } catch (TokenMgrError e) {
+        System.err.println("\nError lexico: " + e.getMessage());
+    }
+  }
+}
+PARSER_END(Practica)
+
+SKIP :
+{
+    < " " | "\n" | "\t" | "\r" > // Ignora espacios, tabuladores...
+|   <"//"(~["\n"])*>             // Ignora comentarios de una linea hasta llegar al salto de linea
+}
+
+MORE : {
+ <INICOM: "/*">  { SwitchTo(COM); } // Inicio comentario multilinea cambiando al estado COM
+}
+
+<COM>SKIP : {
+  <FINCOM: "*/"> : DEFAULT  // Vuelve al estado DEFAULT
+| < ~[]>
+}
+
+// Terminales incluyendo ID, NUM, parentesis, llaves, etc
+<DEFAULT>TOKEN :
+{
+ < IPAR:     "(" >
+|< DPAR:     ")" >
+|< ILLA:     "{" >
+|< DLLA:     "}" >
+|< SI:       "si" >
+|< SINO:     "sino" >
+|< MIENTRAS: "mientras" >
+|< HACER:    "hacer" >
+|< IMPRIMIR: "imprimir" >
+|< IGUAL:    "=" >
+|< SUMA:     "+" >
+|< RESTA:    "-" >
+|< MULTI:    "*" >
+|< DIVI:     "/" >
+|< SIGUAL:   "+=" >
+|< RIGUAL:   "-=" >
+|< MIGUAL:   "*=" >
+|< DIGUAL:   "/=" >
+|< PUNCOMA:  ";" >
+|< NUM:      (["0"-"9"])+ >
+|< ID:       (["a"-"z","A"-"Z","_"])+(["a"-"z","A"-"Z","0"-"9","_"])* >
+}
+
+/**
+* Metodo que se encarga de una lista de sentencias.
+* Se usa como axioma
+*/
+void list_sntncs() : {} {
+    sntnc() <PUNCOMA>  ( list_sntncs() )?
+}
+
+/**
+* Metodo que se encarga de procesar cada tipo de sentencia, ya sea bucle, asignacion, etc
+*/
+void sntnc() : {} {
+  sel_stmt()
+| iter_stmt()
+| assig_stmt()
+| print_stmt()
+}
+
+/**
+* Metodo que se encarga de la sentencia de imprimir
+* */
+void print_stmt() : {} {
+    <IMPRIMIR> <IPAR> expr() <DPAR>  { System.out.println("    print"); }
+}
+
+void sel_stmt() : {
+      int etiSi = sigEtiqueta();    // Etiqueta para bloque si
+      int etiSino;                  /* Etiqueta para bloque sino (no se inicializa ahora para que en caso
+                                       de no usarse no malgastarla) */
+    }
+    {
+    <SI> <IPAR> expr() <DPAR> { System.out.println("    sifalsovea LBL" + etiSi); }
+    <ILLA> list_sntncs() <DLLA>
+    (
+      <SINO>
+      {etiSino = sigEtiqueta(); System.out.println("    vea LBL" + etiSino); System.out.println("LBL" + etiSi + ":"); }
+      <ILLA> list_sntncs() <DLLA>
+      {System.out.println("LBL"+etiSino+":");}
+    |
+      {System.out.println("LBL"+etiSi+":");}
+    )
+}
+
+/**
+* Metodo que se encarga de los bucles
+*/
+void iter_stmt() : {
+      int etiMientras = sigEtiqueta();   // Etiqueta para mientras o hacer
+      int etiFin;                        /* Etiqueta para el final del bucle (no se inicializa ahora para que en caso
+                                            de no usarse no malgastarla) */
+    }
+    {
+        <MIENTRAS> {System.out.println("LBL" + etiMientras + ":");}
+        <IPAR> expr() <DPAR> {etiFin = sigEtiqueta(); System.out.println("    sifalsovea LBL" + etiFin);}
+        <ILLA> list_sntncs() {System.out.println("    vea LBL" + etiMientras);} <DLLA>
+        {System.out.println("LBL" + etiFin + ":");}
+    |   <HACER> {System.out.println("LBL" + etiMientras + ":");}
+        <ILLA> list_sntncs() <DLLA>
+        <MIENTRAS>
+        <IPAR> expr() <DPAR> {System.out.println("    siciertovea LBL" + etiMientras);}
+}
+
+/*
+* Metodo que se encarga de las asignaciones de variables
+*/
+void assig_stmt() : { Token tk; } {
+    tk = <ID>  {System.out.println("    valori " + tk);}
+    (<IGUAL>  expr()
+    |<SIGUAL> {System.out.println("    valord " + tk);} expr() {System.out.println("    sum");}
+    |<RIGUAL> {System.out.println("    valord " + tk);} expr() {System.out.println("    sub");}
+    |<MIGUAL> {System.out.println("    valord " + tk);} expr() {System.out.println("    mul");}
+    |<DIGUAL> {System.out.println("    valord " + tk);} expr() {System.out.println("    div");}
+    ) {System.out.println("    asigna");}
+}
+
+/**
+* Metodo que se encarga de las sumas y restas
+*/
+void expr() : {} {
+    mult_expr() (
+     <SUMA>  mult_expr() { System.out.println("    sum"); }
+    |<RESTA> mult_expr() { System.out.println("    sub"); }
+    )*
+}
+
+/**
+* Metodo que se encarga de las multiplicaciones y divisiones
+*/
+void mult_expr() : {} {
+    val() (
+     <MULTI> val() { System.out.println("    mul"); }
+    |<DIVI>  val() { System.out.println("    div"); }
+    )*
+}
+
+/**
+* Metodo que se encarga de los numeros, identificadores y expresiones que se se
+* encuentren entre parentesis.
+*/
+void val() : { Token tk; } {
+    tk = <NUM>                   { System.out.println("    mete " + tk); }
+|   tk = <ID>                    { System.out.println("    valord " + tk); }
+|   <IPAR> expr() <DPAR>
+}
